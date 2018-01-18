@@ -1,0 +1,50 @@
+#!/bin/sh
+. /lib/lsb/init-functions
+VM="ubun14s"
+IMAGE=ubuntu-safezone.iso
+BUILD=iso
+RunningVMList=`VBoxManage list runningvms`
+timer=0
+# Запаковываем содержимое iso/ в образ ubuntu-custom.iso
+echo ">>> Calculating MD5 sums..."
+#Удаляем предыдущий образ
+rm $IMAGE
+if [ ! -z "$RunningVMList" ];then
+	echo "Выключаем виртуалку"
+	VBoxManage controlvm $VM poweroff
+	RunningVMList=`VBoxManage list runningvms`	
+	fi
+rm $BUILD/md5sum.txt
+(cd $BUILD/ && find . -type f -print0 | xargs -0 md5sum | grep -v "boot.cat" | grep -v "md5sum.txt" > md5sum.txt)
+echo ">>> Building iso image..."
+#Сборка образа
+mkisofs -r -V "Ubuntu OEM install" \
+            -cache-inodes \
+            -J -l -b isolinux/isolinux.bin \
+            -c isolinux/boot.cat -no-emul-boot \
+            -boot-load-size 4 -boot-info-table \
+            -o $IMAGE $BUILD/
+#echo "монтируем образ в виртуалку"
+VBoxManage storageattach $VM --storagectl IDE --port 0 --device 0 --type dvddrive --medium "/home/udbv/work/ubuntu-safezone.iso"
+#echo "Стартуем виртуалку,установка системы"
+VBoxManage startvm $VM
+RunningVMList=`VBoxManage list runningvms`
+#echo "Виртуалка в кикстарте настроена на выключениепосле установки,ждем"
+sleep 10
+echo "Vm started:$RunningVMList"
+sleep 10
+while [ ! -z "$RunningVMList" ]; do	
+	echo "Image installing $VM duration:$timer seconds"
+	sleep 60
+	timer=`expr $timer + 60`
+	RunningVMList=`VBoxManage list runningvms`	
+done
+if [ ! -z "$RunningVMList" ];then
+	echo "There are VM,waiting"
+	RunningVMList=`VBoxManage list runningvms`
+	else 
+		VBoxManage storageattach $VM --storagectl IDE --port 0 --device 0 --medium "emptydrive"
+		echo "Стартуем виртуалку,логинимся"
+		sleep 5
+		VBoxManage startvm $VM
+	fi
